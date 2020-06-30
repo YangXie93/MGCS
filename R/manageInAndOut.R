@@ -76,23 +76,46 @@ buildInputCsv <- function(fastaPath,readPath,mode = "fastq",out = "~/RRSIn"){
 # function to move a file system and update its table accordingly
 
 updateDataSystem <- function(oldPath,newPath){
-    if(substr(newPath,length(newPath),length(newPath)) == "/"){
-        newPath = substr(newPath,1,length(newPath)-1)
+    
+    if(substr(oldPath,nchar(oldPath),nchar(oldPath)) == "/"){
+        
+        oldPath = substr(oldPath,1,nchar(oldPath)-1)
+        
     }
-    if(substr(oldPath,length(oldPath),length(oldPath)) == "/"){
-        oldPath = substr(oldPath,1,length(oldPath)-1)
+    if(substr(oldPath,1,1) == "~"){
+        
+        oldPath = paste0(Sys.getenv("HOME"),substr(oldPath,2,nchar(oldPath)))
+        
     }
+    
+    if(substr(newPath,nchar(newPath),nchar(newPath)) == "/"){
+        
+        newPath = substr(newPath,1,nchar(newPath)-1)
+        
+    }
+    if(substr(newPath,1,1) == "~"){
+        
+        newPath = paste0(Sys.getenv("HOME"),substr(newPath,2,nchar(newPath)))
+        
+    }
+    
     file.move(oldPath,newPath)
     table = readRDS(paste0(newPath,"/DSTable.Rds"))
     
     table$dir = gsub(pattern =  oldPath,replacement =  newPath,x =  table$dir)
     table$fasta = gsub(pattern =  oldPath,replacement = newPath,x =  table$fasta)
+    
     if(length(table$data[[1]]) > 1){
+        
         table$data = lapply(table$data,gsub,pattern = oldPath,replacement = newPath)
+    
     }
     else{
+        
         table$data = gsub(oldPath,newPath,table$data)
+    
     }
+    
     saveRDS(table,paste0(newPath,"/DSTable.Rds"))
 }
 
@@ -121,4 +144,28 @@ getAbundanceProfileFraction <- function(metagenomeDir,part){
     
     
     return(covs)
+}
+
+
+# reset the isCrossmapped column of the DSTable in metagenomeDir to all FALSE
+
+resetIsCrossmapped <- function(metagenomeDir){
+    
+    if(substr(metagenomeDir,nchar(metagenomeDir),nchar(metagenomeDir)) == "/"){
+        
+        metagenomeDir = substr(metagenomeDir,1,nchar(metagenomeDir)-1)
+        
+    }
+    if(substr(metagenomeDir,1,1) == "~"){
+        
+        metagenomeDir = paste0(Sys.getenv("HOME"),substr(metagenomeDir,2,nchar(metagenomeDir)))
+        
+    }
+    
+    table = readRDS(paste0(metagenomeDir,"/DSTable.Rds"))
+    
+    table$isCrossmapped = rep(FALSE,length(table$isCrossmapped))
+    
+    saveRDS(table,paste0(metagenomeDir,"/DSTable.Rds"))
+    
 }

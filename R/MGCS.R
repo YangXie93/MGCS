@@ -768,15 +768,18 @@ crossMapDS <- function(minL,threads,metagenomeDir){
                                 start2 = as.integer(otherGenInfo[,2]),
                                 end2 =as.integer(otherGenInfo[,2])+ mapped[[1]]$qwidth -1,
                                 stringsAsFactors = FALSE,key = c("names1","start1") )
-
+                
                 map = map[,.(start1 = list(start1),end1 = list(end1),start2 = list(start2),end2 = list(end2)),by  = list(names1,names2)]
 
-                unneccessary = cutUneccessaryIdenticals(map$name1,map$name2)
-
-                map = map[!unneccessary]
                 map = map[names1 != names2]
                 map = map[!(names1 %in% mappedAllready)]
                 map = map[!(names2 %in% mappedAllready)]
+                
+                unneccessary = cutUneccessaryIdenticals(map$names1,map$names2)
+                print(length(map$names2))
+                map = map[!unneccessary]
+                print(length(map$names1))
+        
 
                 if(length(map$names1) > 0){
 

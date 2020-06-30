@@ -51,9 +51,12 @@ std::vector<bool> cutUneccessaryIdenticals(std::vector<std::string> name1,std::v
         res.push_back(false);
     }
 
-    for(int i = 0; i < name1.size();i++){
+    for(int i = 0; i < name1.size()-1;i++){
         for(int j = i+1;j < name2.size();j++){
+            
             if(name1[i] == name2[j] && name1[j] == name2[i]){
+                Rcpp::Rcout << name1[i] << " " << name2[i] << " " << name1[j] << " " << name2[j]  << std::endl;
+                Rcpp::Rcout << "entfernt!\n";
                 res[i] = true;
             }
         }
