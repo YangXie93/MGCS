@@ -1,0 +1,16 @@
+Package: MGCS
+Type: Package
+Title: A method to simulate metagenomic contigs with experimental reads
+Version: 1.0
+Date: 2020-06-29
+Author: Your Name
+Maintainer: Your Name <your@email.com>
+Description: This package uses experimental reads maped onto their genomes by bowtie2 to simulate metagenomic contigs.
+License: GPL (>= 2)
+Imports: Rcpp (>= 1.0.4) ,
+    Rsamtools,
+    data.table,
+    Rcpp,
+    seqinr,
+    stringr
+LinkingTo: Rcpp

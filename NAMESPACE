@@ -1,0 +1,8 @@
+useDynLib(MGCS, .registration=TRUE)
+exportPattern("^[[:alpha:]]+")
+importFrom(Rcpp, evalCpp)
+import(data.table)
+import(Rsamtools)
+import(seqinr)
+import(pryr)
+import(stringr)
