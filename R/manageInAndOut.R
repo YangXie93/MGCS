@@ -10,9 +10,9 @@
 #'
 #'
 
-buildInputCsv <- function(fastaPath,readPath,mode = "fastq",out = "~/RRSIn"){
+buildInputCsv <- function(fastaPath,readPath,mode = "fastq",out = "~/MGCSIn"){
 
-    if(mode == "bam" || "fastq"){
+    if(mode == "bam" || mode == "fastq"){
         if(length(fastaPath) != length(readPath)){
             print("fastaPath and readPath have to have the same length")
             return(0)
@@ -32,14 +32,12 @@ buildInputCsv <- function(fastaPath,readPath,mode = "fastq",out = "~/RRSIn"){
             fastas = dir(fastaPath[j])
             reads = dir(readPath[j])
             if(mode == "fastq"){
-                namesReads = gsub(".fastq$|.fq$|_[1|2]_.fastq$|_[1|2]_.fq$","",reads)
+                namesReads = gsub(".fastq$|.fq$|_[1|2]_.fastq$|_[1|2]_.fq$|[1|2]_.fq$|[1|2]_.fastq$|_[1|2].fastq$|_[1|2].fq$","",reads)
             }
             if(mode == "bam"){
                 namesReads = sub(".bam","",reads)
             }
             namesFasta = sub(".fna|.fasta|.final.*|.gt1kb.*|.scaffolds|_run.*|.*.fai","",fastas)
-
-            print(namesFasta[!(namesFasta %in% namesReads)])#######################
 
             fastas = fastas[namesFasta %in% namesReads]
             namesFasta = namesFasta[namesFasta %in% namesReads]
@@ -74,7 +72,13 @@ buildInputCsv <- function(fastaPath,readPath,mode = "fastq",out = "~/RRSIn"){
 }
 
 # function to move a file system and update its table accordingly
-
+#'updateDataSystem
+#'
+#'@description This function moves a datasystem created by the MGCS::addToDataSystem function from oldPath to newPath and updates all paths in the datasystem.
+#'
+#'@param oldPath The path to the current directory of the datasystem.
+#'@param newPath The path to the new location the datasystem shall be put to.
+#'
 updateDataSystem <- function(oldPath,newPath){
     
     if(substr(oldPath,nchar(oldPath),nchar(oldPath)) == "/"){
@@ -123,23 +127,46 @@ updateDataSystem <- function(oldPath,newPath){
 # this function returns a list of integer vectors containing the coverage needed to get a given fraction of
 # every genomes reads (list elements) in a given filesystem and for every sample (vector elements).  
 
-getAbundanceProfileFraction <- function(metagenomeDir,part){
+#'getAbundanceProfileFraction
+#'
+#'@description This function gets the coverage needed to get the fraction of the reads specified in part from a MGCS datasystem. 
+#'
+#'@param metagenomeDir path to the datasystem
+#'@param part share of the reads to take from every genome
+#'@param minMapq minMapq of the reads to be cosidered
+#'
+getAbundanceProfileFraction <- function(metagenomeDir,part,minMapq){
     
-    ds = readRDS(paste0(metagenomeDir,"DSTable.Rds"))
+    if(substr(metagenomeDir,nchar(metagenomeDir),nchar(metagenomeDir)) == "/"){
+        
+        metagenomeDir = substr(metagenomeDir,1,nchar(metagenomeDir)-1)
+        
+    }
+    
+    ds = readRDS(paste0(metagenomeDir,"/DSTable.Rds"))
     unq = unique(ds$dir)
     
     covs = list()
     
-    
     for(i in 1:length(unq)){
-        tab = subset(ds,dir == unq[i])
-        # genomeCovs = c()
-        # for(j in 1:length(tab$data)){
-        tmp = readRDS(tab$data[1])
-        print(paste(sum(tmp$width),"/",tab$totalLength[1],"*",part))
-        covs[[i]]= ceiling( (sum(tmp$width)/tab$totalLength[1]) *part)
-        # }
-        # covs[[i]] = genomeCovs
+        tab = ds[dir == unq[i]]
+        
+        if(is.list(tab$data)){
+            genomeCovs = c()
+            for(j in 1:length(tab$data[[1]])){
+                tmp = readRDS(tab$data[[1]][j])
+                tmp = tmp[mapq >= minMapq]
+                genomeCovs[j] = ceiling( (sum(tmp$width)/tab$totalLength[1]) *part)
+
+            }
+            covs[[i]] = genomeCovs
+        }
+        else{
+            print(tab$data[1])
+            tmp = readRDS(tab$data[1])
+            tmp = tmp[mapq >= minMapq]
+            covs[[i]]= ceiling( (sum(tmp$width)/tab$totalLength[1]) *part)
+        }
     }
     
     
@@ -167,5 +194,25 @@ resetIsCrossmapped <- function(metagenomeDir){
     table$isCrossmapped = rep(FALSE,length(table$isCrossmapped))
     
     saveRDS(table,paste0(metagenomeDir,"/DSTable.Rds"))
+    
+}
+
+#' newMinIdLCrossmapped
+#' @description This function applies the crossMapDS function again on a existing datasystem
+#' @param newMinIdL new minimum length for identical stretches
+#' @param threads the number of threads to be used by bowtie2 and bowtie2-build
+#' @param metagenomeDir path to the datasystem´
+#' 
+newMinIdLCrossmapped<-function(newMinIdL,threads,metagenomeDir){
+    
+    if(substr(metagenomeDir,nchar(metagenomeDir),nchar(metagenomeDir)) == "/"){
+        
+        metagenomeDir = substr(metagenomeDir,1,nchar(metagenomeDir)-1)
+        
+    }
+    
+    resetIsCrossmapped(metagenomeDir)
+    unlink(paste0(metagenomeDir,"/Crossmaps/*"))
+    crossMapDS(newMinIdL,threads,metagenomeDir)
     
 }

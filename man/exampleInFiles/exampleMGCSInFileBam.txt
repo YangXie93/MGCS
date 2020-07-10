@@ -1,0 +1,3 @@
+fasta,bam
+/home/ex1/x.fasta,/home/ex1/x.bam
+/home/ex1/y.fasta,/home/ex1/y.bam

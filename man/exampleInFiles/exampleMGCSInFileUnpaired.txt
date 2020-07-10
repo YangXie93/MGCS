@@ -1,0 +1,3 @@
+fasta,fastq
+/home/ex1/x.fasta,/home/ex1/x.fastq
+/home/ex1/y.fasta,/home/ex1/y.fastq

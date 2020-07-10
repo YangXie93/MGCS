@@ -42,26 +42,27 @@
 //     return res;
 // }
 
+
 //[[Rcpp::export]]
-std::vector<bool> cutUneccessaryIdenticals(std::vector<std::string> name1,std::vector<std::string> name2){
-    std::vector<bool> res;
-    res.reserve(name1.size());
-
-    for(int i = 0;i < name1.size();i++){
-        res.push_back(false);
-    }
-
-    for(int i = 0; i < name1.size()-1;i++){
-        for(int j = i+1;j < name2.size();j++){
-            
-            if(name1[i] == name2[j] && name1[j] == name2[i]){
-                Rcpp::Rcout << name1[i] << " " << name2[i] << " " << name1[j] << " " << name2[j]  << std::endl;
-                Rcpp::Rcout << "entfernt!\n";
-                res[i] = true;
-            }
+bool isNeccessary(std::string thisName1,std::string thisName2,std::vector<std::string> name1,std::vector<std::string> name2){
+    bool res = true;
+    int indx = 0;
+    
+    for(int j = 0;j < name1.size();j++){
+        
+        if( thisName1 == name1[j] && thisName2 == name2[j] ){
+            indx = j;
         }
     }
-
+    for(int j = 0;j < name1.size();j++){
+            
+        if( thisName1 == name2[j] && thisName2 == name1[j] && indx > j){
+            res = false;
+                
+            break;
+        }
+    }
+    
     return res;
 }
 
@@ -185,11 +186,11 @@ std::vector<std::string> subSeqs(std::string seq,std::vector<int> starts,std::ve
     std::vector<int>::iterator en = ends.begin();
     std::string tmp;
     for(int i = 0;i < starts.size();i++){
-        if(*en <= seq.size()){
+        if(*en < seq.size()){
             tmp = seq.substr(*st,*en-*st+1);
         }
         else{
-            tmp = seq.substr(*st,seq.size()-1) + seq.substr(0,*en-seq.size());
+            tmp = seq.substr(*st,seq.size()-1) + seq.substr(0,*en-seq.size()+1);
         }
         res.push_back(tmp);
 

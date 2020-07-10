@@ -17,7 +17,7 @@ public:
 
     //constructor
     //
-    SeqRep(int length,int minOverlap,int nrOfSamples,std::vector<int> *pos,std::vector<int> *width,std::vector<int> *sample){
+    SeqRep(int length,int minOverlap,int nrOfSamples,std::vector<int> *pos,std::vector<int> *width,std::vector<int> *sample,bool plotCoverage){
 
         this->nrOfSamples = nrOfSamples;
         this->length = length;
@@ -27,29 +27,30 @@ public:
         readEnds = new int[nr];
         sampleNr = new int[nr];
         cov = new int[length];
+        plotCov = plotCoverage;
 
-        std::fill(cov,cov+length-1,0);
+        std::fill(cov,cov+length,0);
+        
 
         std::vector<int>::iterator posIt = pos->begin();
         std::vector<int>::iterator widthIt = width->begin();
         std::vector<int>::iterator sampleIt = sample->begin();
         for(int i = 0;i < nr;i++){
 
-          int* start = cov+(*posIt);
+          int* start = cov+(*posIt)-1;
           int* end = start +(*widthIt)-1;
           if(end >= cov+length){
             end = end-length;
           }
 
           addToCov(start,end,1);
-          *(readStarts+i) = (*posIt);
-          *(readEnds+i) = (*posIt)+(*widthIt)-1;
+          *(readStarts+i) = (*posIt)-1;
+          *(readEnds+i) = (*posIt)+(*widthIt)-2;
           *(sampleNr+i) = *sampleIt;
           posIt++;
           widthIt++;
           sampleIt++;
         }
-
         evalOverlap();
     }
 
@@ -79,22 +80,30 @@ public:
           end = *(readEnds+i);
           tmp = start;
           while(start != end+1 && tmp != end+1){
+
             if(*(cov+tmp) > 1){
               count++;
             }
             else{
+              // Rcpp::Rcout << "count: " << count << " best: " << best << std::endl;
               if(count > best){
                 best = count;
               }
               count = 0;
             }
+            
             start++;
             tmp++;
             if(tmp >= length){
               tmp = 0;
             }
           }
-          if(best >= minOverlap){
+          // Rcpp::Rcout << "count: " << count << " best: " << best << std::endl;
+          if(count > best){
+            best = count;
+          }
+          // Rcpp::Rcout << "best: " << best << " minOv: " << minOverlap << std::endl;
+          if(best < minOverlap){
             addToCov(cov+*(readStarts+i),cov+end,-1);
             toSkip.push_back(i);
             sortedOut++;
@@ -102,6 +111,7 @@ public:
           count = 0;
           best = 0;
       }
+      // Rcpp::Rcout << sortedOut << " reads of " << nr << " were sorted out" << std::endl;
     }
 
     // function to get all contiguos sequences on the coverage vector
@@ -120,12 +130,11 @@ public:
           covIt++;
           i++;
         }
-
         if(i >= length-1){
           starts.push_back(1);
           ends.push_back(length);
           readsPerSample.push_back(getReadsPerSampleOnRange(1,length));
-          covs.push_back(std::vector<int> (cov,cov+length-1));
+          covs.push_back(std::vector<int> (cov,cov+length));
         }
         else{
           bool switching = true;
@@ -144,30 +153,48 @@ public:
           while(it != covIt){
             if(it >= cov+length){
               it = cov;
-              end = 0;
             }
 
             if(*(it) > 0 && switching){
               start = end;
               switching = false;
             }
-            if(*(it) == 0 && !switching){
-
+            if(*(it) == 0  && !switching){
               switching = true;
               if(end - start >= minContigLength){
                 starts.push_back(start+1);
                 ends.push_back(end);
                 readsPerSample.push_back(getReadsPerSampleOnRange(start+1,end));
-                covs.push_back(std::vector<int> (cov+start,cov+end));
+                covs.push_back(getCovRange(start,it-cov));
               }
             }
 
             it++;
             end++;
           }
+          
+          if(!switching){
+            // end--;
+            // it--;
+            switching = true;
+            if(end - start >= minContigLength){
+              starts.push_back(start+1);
+              ends.push_back(end);
+              readsPerSample.push_back(getReadsPerSampleOnRange(start+1,end));
+              covs.push_back(getCovRange(start,it-cov));
+            }
+          }
 
         }
-        Rcpp::List res = Rcpp::List::create(starts, ends, covs,readsPerSample);
+        
+        Rcpp::List res;
+        if(!plotCov){
+          res = Rcpp::List::create(starts, ends, covs,readsPerSample);
+        }
+        else{
+          std::vector<int> covProf(cov,cov+length);
+          res = Rcpp::List::create(starts, ends, covs,readsPerSample,covProf);
+        }
         return res;
     }
 
@@ -181,17 +208,31 @@ public:
     int* getCov(){
       return cov;
     }
-
+    
+    
+    std::vector<int> getCovRange(int start,int end){
+      std::vector<int> res;
+      int i = 0;
+      while(start != end && i < length){
+        if(start >= length){
+          start = 0;
+        }
+        res.push_back(*(cov+start));
+        start++;
+        i++;
+      }
+      
+      return res;
+    }
+    
     // function to add a value to a given range on the coverage vector
     //
     void addToCov(int* start,int* end,int val){
       int* tmp = start;
-      int x = 1;
       while(start != end+1 && tmp != end+1){
         (*tmp) += val;
         tmp++;
         start++;
-        x++;
         if(tmp >= cov+length){
           tmp = cov;
         }
@@ -250,6 +291,8 @@ private:
 
     // indicies of reads that have been sorted out by evalOverlap()
     std::vector<int> toSkip;
+    
+    bool plotCov;
 };
 
 

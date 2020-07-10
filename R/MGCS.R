@@ -4,6 +4,8 @@
 #'or in bam format, and their respective referencesequences in fasta format.
 #'Except from the dependencies shown in the description file this package also needs Bowtie2 and samtools to be installed.
 #'
+#'
+#'
 #'@docType package
 #'@author Yang Xie
 #'@import Rcpp data.table Rsamtools
@@ -21,31 +23,38 @@ NULL
 #' @param metagenomeDir A String specifying which metagenome datasystem to use, or where to build one if filenames_csv is given.
 #' @param genomesByName A character vector containing the names of genomes to be used from metagenomeDir for this simulation.
 #' @param coverage A list of integer vectors. Each element of the vectors contains a coverage value for one sample that is to be simulated. If the list is shorter than the number of genomes that have been selected for the simulation, the last vector will be used for the rest of the genomes.
-#' @param nrOfSamples The number of samples to be generated. (this can be ignored when multiple bam/fastq files are given for each genome).
+#' @param nrOfSamples The number of samples to be generated. (this can be ignored when multiple bam/fastq files are given for each genome). The default is 1.
 #' @param humanReadable A boolean value determening wether there will be graphical output or not.
 #' @param bowtieOptions A character vector containing the bowtie2 options for building a datasystem.
 #' @param bowtieBuildOptions A character vector containing the bowtie2-build options for building a datasystem.
-#' @param readAsBams A boolean value determening wether filenames_csv should be read as containing bam file names or fastq.
-#' @param minMapq A integer value stating the minimal mapq score of the reads to use for this simulation.
+#' @param readAsBams A boolean value determening wether filenames_csv should be read as containing bam file names or fastq. The default is FALSE.
+#' @param threads A integer specifying the number of threads to be used by bowtie2, bowtie2-build and samtools view.
+#' @param minMapq A integer value stating the minimal mapq score of the reads to use for this simulation. The default is 0.
 #' @param redraw A boolean value determening, if the asked for coverage is to much for the data set, reads from the same data set should be drawn again.
-#' @param repeatable A boolean value determening wether a seed will be set.
+#' @param repeatable A boolean value determening wether a seed will be set. The default is TRUE.
 #' @param seed A integer value used as seed when reapeatable = TRUE.
 #' @param minContigLength The minimum length a simulated contig must have to be included in the results.
-#' @param minDist The minimum mean share a contigs coverage has to make up of a chimeric contig, so that the chimeric contig will be generated.
+#' @param minCovShare The minimum mean share a contigs coverage has to make up of a chimeric contig, so that the chimeric contig will be generated.
 #' @param minIdenticalLength The minimum length of a sequence that is identical on two genomes to be considered.
 #' @param outputFile A String giving the path to and first part of the names of the output files.
 #' @param allSamplesToOneColInOut A boolean value determening wether to have the coverage vectors of the simulated contigs in individual columns in the output file or in one column.
-#' @param threads A integer specifying the number of threads to be used by bowtie2, bowtie2-build and samtools view.
+#' @param onlyReads A boolean value determening whether the output shall be the sampled reads (TRUE) or contigs (FALSE). The default value is FALSE.
+#' @param keepBams A boolean value determening wheter to delete bams that were made by Bowtie2 (TRUE) or not (FALSE). Default is TRUE. The bam files will be stored in the directory of the genome they belong to in the filesystem.
+#' @param plotCoverageProfile A boolean value that if TRUE will lead to all coverage profiles to all genomes being plotted. Default is FALSE.
+#' @param minOvFactor A numeric value by which the minimal overlap requirement is multiplied. Default is 1.
+#' @param skipCoAssembly A boolean, that if TRUE leads to the coassembly simulation being skipped. Default is FALSE.
 #'
-#' @return A data.table containing the simulated contigs, with the columns start (the first positoin of the contig on the sequence its reads come from), end (the last position of the contig on the sequence its reads come from), coverage (a vector containing the coverage for each position on the contig), seq (the DNA sequence of the vector), covVec (a vector containing the mean coverage to every sample),length (A integer stating the length of the contig), contName (a specific name for the contig).
+#' @return A data.table containing the simulated contigs, with the columns seq (the DNA sequence of the vector), covVec (a vector containing the mean coverage to every sample),length (A integer stating the length of the contig), contName (a specific name for the contig).
 #' If a contigs name and the corresponding seqName are made up of multiple sequence names it means that the contig is chimeric and made up of the sequences mentioned in the name.
 #' @export
 
 MGCS <- function(filenames_csv = character(0) , metagenomeDir , genomesByName = character(0) , coverage = list(),
                         nrOfSamples = 1 , bowtieOptions = "" , bowtieBuildOptions = "",threads = 1,
-                        readAsBams = TRUE , minMapq = 40 , redraw = FALSE , repeatable = TRUE , seed = 1,
-                        minContigLength = 500 , minDist = 0.0 , minIdenticalLength = 2000 , fileOutput = TRUE , outputFile = "~/MGCSOut",
-                        allSamplesToOneColInOut = TRUE, onlyReads = FALSE){
+                        readAsBams = FALSE, minMapq = 0 , redraw = FALSE , repeatable = TRUE , seed = 1,
+                        minContigLength = 500 , minCovShare = 0.0 , minIdenticalLength = 2000 , outputFile = "~/MGCSOut",
+                        allSamplesToOneColInOut = TRUE, onlyReads = FALSE, keepBams = TRUE,
+                        plotCoverageProfile = FALSE,minOvFactor = 1,skipCoAssembly = FALSE,setCovProfYlim = 800,
+                        onlyInvisibleCimeric = FALSE){
 
     library("Rsamtools")
     library("data.table")
@@ -75,7 +84,8 @@ MGCS <- function(filenames_csv = character(0) , metagenomeDir , genomesByName = 
     inputFileNr = length(filenames_csv)
 
     if(inputFileNr > 0){
-        addToDataSystem(filenames_csv,bowtieOptions,minIdenticalLength,metagenomeDir,readAsBams,bowtiebuildOptions = bowtieBuildOptions,threads = threads)
+        addToDataSystem(filenames_csv,bowtieOptions,minIdenticalLength,metagenomeDir,readAsBams,
+                        bowtiebuildOptions = bowtieBuildOptions,threads = threads,keepBams)
     }
 
     if(inputFileNr > 1){
@@ -94,30 +104,48 @@ MGCS <- function(filenames_csv = character(0) , metagenomeDir , genomesByName = 
         }
     }
 
-    print("Time: addToDataSystem: ")
-    print(Sys.time() - starttime)##############################################
 
     #-------------------------------- assembly --------------------------------------------------------
 
-    res = MGCS_PreAssembly(catalogue,coverage,repeatable,redraw,seed,nrOfSamples,minMapq,minContigLength,onlyReads)
-    
-    if(!onlyReads){
+    res = MGCS_PreAssembly(catalogue,coverage,repeatable,redraw,seed,nrOfSamples,minMapq,
+                           minContigLength,onlyReads,useLongReads,plotCoverageProfile,minOvFactor,setCovProfYlim)
+    if(!onlyReads && length(res$start) > 0 && !skipCoAssembly){
         print("co-assembly")################################################################################
         #----------------------------------- co-assembly ----------------------------------------------------
-        res = coAssemble_MGCS_DS(res,minDist,metagenomeDir)
-        res[, ("length") := ((end-start)+1)]
+        
+
+        res = new_coassemble_MGCS_DS(res,minCovShare,metagenomeDir,onlyInvisibleCimeric)
+        res[, ("length") := nchar(seq)]
         res = res[length >= minContigLength]
         res[,("covVec") := calcCovVec(res$rps,res$length)]
+        
+        makeFileOutput(outputFile,res,nrOfSamples,allSamplesToOneColInOut )
+    }
+    else{
+        if(length(res$start) > 0){
+            if(skipCoAssembly ){
+                res[, ("length") := nchar(seq)]
+                res = res[length >= minContigLength]
+                res[,("covVec") := calcCovVec(res$rps,res$length)]
+                    
+                if(fileOutput){
+                    makeFileOutput(outputFile,res,nrOfSamples,allSamplesToOneColInOut )
+                }
     
-        if(fileOutput){
-            makeFileOutput(outputFile,res,nrOfSamples,allSamplesToOneColInOut )
+            }
+            res[, "start" := NULL]
+            res[, "end" := NULL]
+        }
+        else{
+            print( "no contigs could be assembled with the selected parameters")
         }
     }
-    print(Sys.time() -starttime)#################################################################
+    
     return(res)
 }
 
-MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSamples,minMapq,minContigLength,onlyReads){
+MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSamples,minMapq,minContigLength,
+                             onlyReads,useLongReads,plotCoverageProfile,minOvFactor,setCovProfYlim){
 
     starts = list()
     ends = list()
@@ -135,8 +163,7 @@ MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSampl
     n = 1
     covAt = 1
     for(i in 1:length(DS)){
-        print(paste0(i," of: ",length(DS)," gen: ",DS[i]))################################################
-
+        print(paste("Genome:",i,"of:",length(DS)))
         partialCatalogue = catalogue[dir == DS[i]]
 
         if(useCov){
@@ -147,7 +174,8 @@ MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSampl
         }
 
         fullData = randomReads(partialCatalogue$data[[1]],partialCatalogue$totalLength[1],coverage = thisCov,
-                               meanWidht = partialCatalogue$meanWidth[1],repeatable,seed,redraw,nrOfSamples,useCov,minMapq)
+                               meanWidht = partialCatalogue$meanWidth[1],repeatable,seed,redraw,nrOfSamples,
+                               useCov,minMapq)
 
         if(length(fullData) > 0){
 
@@ -157,21 +185,36 @@ MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSampl
                 
                 if(!onlyReads){
                     if(length(data$pos) > 0){
-    
-                        contigs = evalCoverage(data$pos, data$width,data$sampleNr, partialCatalogue$len[j],partialCatalogue$minOverlap[j],
-                                               minContigLength,nrOfSamples)
-    
+                        contigs = evalCoverage(data$pos, data$width,data$sampleNr, partialCatalogue$len[j],
+                                               round(partialCatalogue$minOverlap[j] *minOvFactor),
+                                               minContigLength,nrOfSamples,plotCoverageProfile)
+                        rm(data)
                         if(length(contigs[[1]]) > 0){
     
                             fst = readDNAStringSet(partialCatalogue$fasta[j])
                             starts[[n]] = contigs[[1]]
                             ends[[n]] = contigs[[2]]
-                            sequ[[n]] = subSeqs(toString(fst),starts[[n]],ends[[n]])
+                            sequ[[n]] = subSeqs(toString(fst),(starts[[n]]-1),(ends[[n]] -1))
                             cov = append(cov,contigs[[3]])
-                            readsPerSample = append(readsPerSample, contigs[[4]])
-                            seqs[[n]] = rep(partialCatalogue$name[j],length(contigs[[1]]))
+                            readsPerSample =  append(readsPerSample,contigs[[4]])
+                            seqs[[n]] = rep(partialCatalogue$name[j],length(starts[[n]]))
                             n = n+1
-    
+                            
+                            if(plotCoverageProfile){
+                                if(!dir.exists("~/mcgs_coverage_profiles/")){
+                                    dir.create("~/mcgs_coverage_profiles/")
+                                }
+                                
+                                if(!dir.exists( paste0("~/mcgs_coverage_profiles/",partialCatalogue$name[j]) )){
+                                    dir.create( paste0("~/mcgs_coverage_profiles/",partialCatalogue$name[j]) )
+                                }
+                                png(paste0("~/mcgs_coverage_profiles/",partialCatalogue$name[j],"/",partialCatalogue$name[j],"_Cov",
+                                           thisCov,"_Mq",minMapq,".png"))
+                                plot(contigs[[5]],xlab = "Position",type = "h",ylab = "coverage",ylim = c(0,setCovProfYlim),main = paste(partialCatalogue$name[j],
+                                    "with coverage",thisCov,"and min mapq",minMapq) )
+                                dev.off()
+                            }
+                            rm(contigs)
                         }
                     }
                 }
@@ -194,7 +237,7 @@ MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSampl
         if(covAt < length(coverage)){
             covAt = covAt +1
         }
-
+        rm(fullData)
     }
     if(!onlyReads){
         res = data.table(start = unlist(starts),end = unlist(ends),coverage = cov,seqName = unlist(seqs),seq = unlist(sequ),
@@ -207,37 +250,49 @@ MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSampl
 }
 
 
-# function to simulate coassembly using coAssembly.cpp
-#
-coAssemble_MGCS_DS <- function(contigs,minDist,metagenomeDir){
-
+new_coassemble_MGCS_DS<-function(contigs,minCovShare,metagenomeDir,onlyInvisibleChimeric,seed){
+    
     crossmaps = dir(paste0(metagenomeDir,"/Crossmaps"))
-
+    
     if(length(crossmaps) != 0){
-
+        
         involved = unique(contigs$seqName)
-
+        involved = sample(involved,length(involved))
+        
+        
         tmp = unlist(strsplit(crossmaps,"_X_|.Rds"))
         col1 = tmp[seq(1,length(tmp),2)]
         col2 = tmp[seq(2,length(tmp),2)]
-
+        
         table = data.table(name1 = col1,name2 = col2,name1IsIn = (col1 %in% involved),
                            name2IsIn = (col2 %in% involved),path = paste0(metagenomeDir,"/Crossmaps/",crossmaps))
-
+        
         table = table[name1IsIn == TRUE]
         table = table[name2IsIn == TRUE]
-
+        
+        
+        
+        
         if(length(table$name1) > 0){
-
+            
             starts = list()
             ends = list()
             covs = list()
             seqs = list()
             rps = list()
             nms = list()
-
+            
+            ovstarts1 = list()
+            ovstarts2 = list()
+            ovends1 = list()
+            ovends2 = list()
+            seqid1 = list()
+            seqid2 = list()
+            
+            namesOv = c()
+            n = 1
+            
             for(i in 1:length(involved)){
-
                 tmp = contigs[seqName == involved[i]]
                 starts[[i]] = tmp$start
                 ends[[i]] = tmp$end
@@ -245,71 +300,63 @@ coAssemble_MGCS_DS <- function(contigs,minDist,metagenomeDir){
                 seqs[[i]] = tmp$seq
                 rps[[i]] = tmp$rps
                 nms[[i]] = tmp$seqName
-
-            }
-
-            names(starts) = involved
-            names(ends) = involved
-            names(covs) = involved
-            names(seqs) = involved
-            names(rps) = involved
-            names(nms) = involved
-
-            rm(contigs)
-            for(i in 1:length(table$name1)){
-
-                print(paste0(i," of ",length(table$name1)," names: ",table$name1[i]," : ",table$name2[i]))######################
-
-                same = readRDS(table$path[i])
-
-                same1 = same[table$name1[i]][[1]]
-                same2 = same[table$name2[i]][[1]]
-
-                if(length(starts[table$name1[i]][[1]] ) > 0 && length(starts[table$name2[i]][[1]]) > 0 ){
-
-                    newConts = mkChimeras(starts[table$name1[i]][[1]],ends[table$name1[i]][[1]],covs[table$name1[i]][[1]],
-                               starts[table$name2[i]][[1]],ends[table$name2[i]][[1]],covs[table$name2[i]][[1]],
-                               start(same1),end(same1),start(same2),end(same2),
-                               seqs[table$name1[i]][[1]],seqs[table$name2[i]][[1]]
-                               ,nms[table$name1[i]][[1]],nms[table$name2[i]][[1]],
-                               rps[table$name1[i]][[1]],rps[table$name2[i]][[1]],
-                               minDist)
-
-
-                    starts[table$name1[i]][[1]] = newConts[[1]]
-                    starts[table$name2[i]][[1]] = newConts[[2]]
-                    ends[table$name1[i]][[1]] = newConts[[3]]
-                    ends[table$name2[i]][[1]] = newConts[[4]]
-                    seqs[table$name1[i]][[1]] = newConts[[5]]
-                    seqs[table$name2[i]][[1]] = newConts[[6]]
-                    covs[table$name1[i]][[1]] = newConts[[7]]
-                    covs[table$name2[i]][[1]] = newConts[[8]]
-                    nms[table$name1[i]][[1]] = newConts[[9]]
-                    nms[table$name2[i]][[1]] = newConts[[10]]
-                    rps[table$name1[i]][[1]] = newConts[[11]]
-                    rps[table$name2[i]][[1]] = newConts[[12]]
-
+                
+                toLoad = table[name1 == involved[i]]$path
+                toLoad = c(toLoad,table[name2 == involved[i]]$path)
+                
+                tmpovstarts1 = c()
+                tmpovstarts2 = c()
+                tmpovends1 = c()
+                tmpovends2 = c()
+                tmpseqid1 = c()
+                tmpseqid2 = c()
+                if(length(toLoad) > 0){
+                    for(j in 1:length(toLoad)){
+                        map = readRDS(toLoad[j])
+                        
+                        one = which(names(map) == involved[i]) 
+                        two = which(names(map) != involved[i])
+                        
+                        tmpovstarts1 = c(tmpovstarts1,start(map[[one]]))
+                        tmpovstarts2 = c(tmpovstarts2, start(map[[two]]))
+                        tmpovends1 = c(tmpovends1, end(map[[one]]))
+                        tmpovends2 = c(tmpovends2, end(map[[two]]))
+                        tmpseqid1 = c(tmpseqid1 ,rep( (i-1) , length(end(map[[two]])) ))
+                        tmpseqid2 = c(tmpseqid2, rep( (which(involved == names(map[two])) -1) , length(end(map[[two]])) ))
+                    }
+                    
+                    table = table[name1 != involved[i]]
+                    table = table[name2 != involved[i]]
                 }
-
+                if(length(tmpovstarts1) > 0){
+                    ovstarts1[[n]] = tmpovstarts1
+                    ovstarts2[[n]] = tmpovstarts2
+                    ovends1[[n]] = tmpovends1
+                    ovends2[[n]] = tmpovends2
+                    seqid1[[n]] = tmpseqid1
+                    seqid2[[n]] = tmpseqid2
+                    namesOv[n] = involved[i]
+                    n = n+1
+                }
             }
-
-            contigs = data.table(start = unlist(starts),end = unlist(ends),
-                                 coverage = unlist(covs,recursive = FALSE),
-                                 seqName = unlist(nms),seq = unlist(seqs),
-                                 rps = unlist(rps,recursive = FALSE),
-                                 stringsAsFactors = FALSE)
-
+            rm(contigs)
+            
+            
+            res = makeChimericContigs(involved,covs,rps,starts,ends,seqs,ovstarts1,ovends1,ovstarts2,ovends2,namesOv,seqid1,seqid2,minCovShare,onlyInvisibleChimeric)
+            res = data.table(seqNames = res[[1]],seq = res[[2]],covVecs= res[[3]],isChimeric = res[[4]])
         }
     }
-    return(contigs)
+    return(res)
 }
+
+
 
 # write a Fasta and a csv file from the result data.table
 #
 makeFileOutput <- function(outputFile,contigs,sampleNr,allSamplesToOneColInOut){
-
+    
     contNames = makeFastaOutput(contigs$seqName,contigs$seq,outputFile)
-    csvTable = contigs[,c("seq","coverage","rps") := NULL]
+    csvTable = contigs[,("seq") := NULL]
     csvTable[,("contNames") := contNames]
     if(!allSamplesToOneColInOut){
         covVecs = unlist(csvTable$covVec)
@@ -342,7 +389,8 @@ randomReads <- function(dataPaths,seqLength,coverage,meanWidht,repeatable,seed,r
 
             data = readRDS(dataPaths[i])
             data = data[mapq >= minMapq]
-
+            
+            
         }
         if(length(data$pos) > 0){
             if(useCov){
@@ -403,7 +451,7 @@ randomReads <- function(dataPaths,seqLength,coverage,meanWidht,repeatable,seed,r
 #'
 #' @return This function has no return value
 
-addToDataSystem <- function(filenames_csv,bowtieOptions = "--no-unal",minIdL,metagenomeDir,readAsBams,bowtiebuildOptions,threads = 1){
+addToDataSystem <- function(filenames_csv,bowtieOptions = "--no-unal",minIdL,metagenomeDir,readAsBams,bowtiebuildOptions = "",threads = 1,keepBams = TRUE){
 
     if(substr(metagenomeDir,1,1) == "~"){
 
@@ -479,17 +527,15 @@ addToDataSystem <- function(filenames_csv,bowtieOptions = "--no-unal",minIdL,met
             if(readAsBams){
 
                 readData = saveReads(filenames$fasta[i],character(0),character(0),filenames$bam[[i]],this,
-                                     metagenomeDir,bowtieOptions,bowtiebuildOptions,dirNm,threads)
+                                     metagenomeDir,bowtieOptions,bowtiebuildOptions,dirNm,threads,keepBams)
 
             }
             else{
 
                 readData = saveReads(filenames$fasta[i],filenames$fastq1[[i]],filenames$fastq2[[i]],character(0),this,
-                                     metagenomeDir,bowtieOptions,bowtiebuildOptions,dirNm,threads)
+                                     metagenomeDir,bowtieOptions,bowtiebuildOptions,dirNm,threads,keepBams)
 
             }
-
-            print(Sys.time() -timeBowtie)####################
 
             if(length(readData$path) > 0){
 
@@ -581,7 +627,7 @@ addToDataSystem <- function(filenames_csv,bowtieOptions = "--no-unal",minIdL,met
 
 # map the reads back to the refrence sequence and save them to the data system
 #
-saveReads <- function(fasta,fastq1,fastq2,bams,this,metagenomeDir,bowtieOptions,bowtieBuildOptions,dirNm,threads){
+saveReads <- function(fasta,fastq1,fastq2,bams,this,metagenomeDir,bowtieOptions,bowtieBuildOptions,dirNm,threads,keepBams){
 
     if(length(bams) == 0){
 
@@ -604,12 +650,11 @@ saveReads <- function(fasta,fastq1,fastq2,bams,this,metagenomeDir,bowtieOptions,
     filenames = list()
     meanWidths = c()
     system(paste0("bowtie2-build --threads ",threads," ",paste(bowtieBuildOptions,collapse = " ")," ",fasta," ",this,"/index"),ignore.stdout = TRUE)
-    print(paste0("bowtie2-build --threads ",threads," ",paste(bowtieBuildOptions,collapse = " ")," ",fasta," ",this,"/index"))
     for(i in 1:num){
 
         if(length(bams) == 0){
 
-            execBowtie2(fasta,fastq1[i],fastq2[i],bowtieOptions,threads,this)
+            execBowtie2(fasta,fastq1[i],fastq2[i],bowtieOptions,threads,this,keepBams)
             bam = paste0(this,"/out.bam")
             hasOut = TRUE
 
@@ -652,7 +697,7 @@ saveReads <- function(fasta,fastq1,fastq2,bams,this,metagenomeDir,bowtieOptions,
     }
     if(hasOut){
 
-        system(paste0("rm ",this,"/out*"))
+        system(paste0("rm ",this,"/out.sam"))
 
     }
     res = data.table(path = filenames,seqNames = seqNames,length = seqLngs,meanWidth = meanWidths)
@@ -662,24 +707,23 @@ saveReads <- function(fasta,fastq1,fastq2,bams,this,metagenomeDir,bowtieOptions,
 
 # decide in which way to execute bowtie2
 #
-execBowtie2 <- function(fasta,fastq1,fastq2,bowtieOptions,threads,this){
+execBowtie2 <- function(fasta,fastq1,fastq2,bowtieOptions,threads,this,keepBam){
 
 
     if(is.null(fastq2)){
-        print("unpaired")##########################################
         system(paste0("bowtie2 -p ",threads," --no-unal ",paste(bowtieOptions,collapse = " ")," -x ",this,"/index -U ",
                       fastq1," -S ",this,"/out.sam"))#,ignore.stdout = TRUE)#,ignore.stderr = TRUE)
 
     }
     else{
-        print(paste0("bowtie2 -p ",threads," --no-unal ",paste(bowtieOptions,collapse = " ")," -x ",this,"/index -1 ",
-                     fastq1," -2 ",fastq2," -S ",this,"/out.sam"))##########################################
         system(paste0("bowtie2 -p ",threads," --no-unal ",paste(bowtieOptions,collapse = " ")," -x ",this,"/index -1 ",
                       fastq1," -2 ",fastq2," -S ",this,"/out.sam"))#,ignore.stdout = TRUE)#,ignore.stderr = TRUE)
 
     }
     system(paste0("samtools view -bS -@ ",threads," ",this,"/out.sam > ",this,"/out.bam"))
-    system(paste0("rm ",this,"/out.sam"))
+    if(!keepBam){
+        system(paste0("rm ",this,"/out.sam"))
+    }
 }
 
 # setup the fasta files for a genome in the datasystem
@@ -739,7 +783,10 @@ crossMapDS <- function(minL,threads,metagenomeDir){
     bins = table[, .("length" = sum(len),"isCrossmapped" = all(isCrossmapped),"names" = .(name)),by = "dir"]
 
     params = ScanBamParam(what = c("pos","qwidth","qname","rname"))
-    mappedAllready = c()
+    mappedNames1 = c()
+    mappedNames2 = c()
+    mn = 0
+    nrAll = 0
     #------------------------------------------------------ going through the datasystem------------------------------------------
     for(p in 1:(length(bins$dir)-1)){
 
@@ -759,7 +806,6 @@ crossMapDS <- function(minL,threads,metagenomeDir){
 
             if(length(mapped[[1]]$pos) > 0){
 
-
                 otherGenInfo = str_split_fixed(mapped[[1]]$qname,";;",2)
                 map = data.table(names1 = as.character(mapped[[1]]$rname),
                                 start1 = mapped[[1]]$pos,
@@ -770,43 +816,48 @@ crossMapDS <- function(minL,threads,metagenomeDir){
                                 stringsAsFactors = FALSE,key = c("names1","start1") )
                 
                 map = map[,.(start1 = list(start1),end1 = list(end1),start2 = list(start2),end2 = list(end2)),by  = list(names1,names2)]
-
                 map = map[names1 != names2]
-                map = map[!(names1 %in% mappedAllready)]
-                map = map[!(names2 %in% mappedAllready)]
+
+                mappedNames1 = c(mappedNames1,map$names1)
+                mappedNames2 = c(mappedNames2,map$names2)
                 
-                unneccessary = cutUneccessaryIdenticals(map$names1,map$names2)
-                print(length(map$names2))
-                map = map[!unneccessary]
-                print(length(map$names1))
-        
-
+            
+                # if(length(map$names1) > 0 && length(mappedNames1) > 0){
+                #     necc = cutUneccessaryIdenticals(map$names1,map$names2,mappedNames1,mappedNames2)
+                #     map = map[necc]
+                # }
+                
                 if(length(map$names1) > 0){
-
+                    
+                    
                     sameConts = getIdenticalSeqsList(map$names1,map$start1,map$end1,map$names2,map$start2,map$end2,minL)
-
+                    
+                    
 
                     for(i in 1:length(sameConts)){
 
                         if(length(sameConts[[i]][[1]]) > 0){
-
-                            conts1 = IRanges(start = sameConts[[i]][[2]],end = sameConts[[i]][[3]],names = sameConts[[i]][[1]])
-                            conts2 = IRanges(start = sameConts[[i]][[4]],end = sameConts[[i]][[5]],names = sameConts[[i]][[1]])
-
-                            toSave = list(conts2,conts1)
-                            names(toSave) = c(sameConts[[i]][[6]],sameConts[[i]][[7]])
-                            saveRDS(toSave,paste0(metagenomeDir,"/Crossmaps/",sameConts[[i]][[6]],"_X_",sameConts[[i]][[7]],".Rds"))
-
+                            if(isNeccessary(sameConts[[i]][[6]],sameConts[[i]][[7]],mappedNames1,mappedNames2)){
+                                
+                                conts1 = IRanges(start = sameConts[[i]][[2]],end = sameConts[[i]][[3]],names = sameConts[[i]][[1]])
+                                conts2 = IRanges(start = sameConts[[i]][[4]],end = sameConts[[i]][[5]],names = sameConts[[i]][[1]])
+        
+                                toSave = list(conts2,conts1)
+                                names(toSave) = c(sameConts[[i]][[6]],sameConts[[i]][[7]])
+                                saveRDS(toSave,paste0(metagenomeDir,"/Crossmaps/",sameConts[[i]][[6]],"_X_",sameConts[[i]][[7]],".Rds"))
+                                mn = mn +1
+                            }
+                            
+                            
                         }
                     }
                 }
             }
             #-------------------------------- deleting everything that is of no further use ------------------------------------------
-
+            
             system(paste0("rm ",bins$dir[p],"/out.sam"))
             system(paste0("rm ",bins$dir[p],"/out.bam"))
             table[dir == bins$dir[p]]$isCrossmapped = TRUE
-            mappedAllready = c(mappedAllready,bins$names[p])
         }
     }
     saveRDS(table,paste0(metagenomeDir,"/DSTable.Rds"))
