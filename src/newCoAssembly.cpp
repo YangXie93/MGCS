@@ -60,7 +60,7 @@ Contig* Contig::fuse(Contig* other,SubContig* thisSub,SubContig* otherSub,int ov
                 bool checking;
                 
                 if(onlyInvisibleChimeric){
-                    checking = (thisLeft || otherLeft || thisRight || otherRight);
+                    checking = (thisLeft && thisRight &&  !otherLeft && !otherRight) || (otherLeft && otherRight);
                 }
                 else{
                     checking = (thisLeft && otherLeft) || (thisRight && otherRight);

@@ -168,16 +168,17 @@ std::ostream& operator<<(std::ostream &strm, SubContig &cont){
 class ContigContainer{
 public:
         
-        void add(std::string seq,std::vector<int> covVec,bool isChimeric,std::string seqName){
+        void add(std::string seq,std::vector<int> covVec,bool isChimeric,std::string seqName,std::vector<int> covs){
             
             seqs.push_back(seq);
             covVecs.push_back(covVec);
             this->isChimeric.push_back(isChimeric);
+            this->covs.push_back(covs);
             seqNames.push_back(seqName);
         }
     
     List finalize(){
-        return List::create(seqNames,seqs,covVecs,isChimeric);
+        return List::create(seqNames,seqs,covVecs,isChimeric,covs);
     }
     
 private:
@@ -185,6 +186,7 @@ private:
     std::vector<std::string> seqs;
     std::vector<std::vector<int> > covVecs;
     std::vector<std::string> seqNames;
+    std::vector<std::vector<int> > covs;
 };
 
 
@@ -216,7 +218,7 @@ class Contig: public SuperContig{
     ~Contig(){
         
         if(save){
-            (this->container)->add(seq,covVec,isChimeric,seqName);
+            (this->container)->add(seq,covVec,isChimeric,seqName,cov);
         }
         int n;
         for(std::vector<SubContig*>::iterator i = subs.begin();i != subs.end();i++){

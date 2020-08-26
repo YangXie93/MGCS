@@ -95,7 +95,8 @@ MGCS <- function(filenames_csv = character(0) , metagenomeDir , genomesByName = 
     catalogue = readRDS(paste0(metagenomeDir,"/DSTable.Rds"))
 
     if(length(genomesByName) > 0){
-        catalogue = catalogue[name %in% genomesByName] # to be tested
+        genomeNames = basename(catalogue$dir)
+        catalogue = catalogue[genomeNames %in% genomesByName] # to be tested
     }
 
     if(inputFileNr == 0){
@@ -109,15 +110,18 @@ MGCS <- function(filenames_csv = character(0) , metagenomeDir , genomesByName = 
 
     res = MGCS_PreAssembly(catalogue,coverage,repeatable,redraw,seed,nrOfSamples,minMapq,
                            minContigLength,onlyReads,useLongReads,plotCoverageProfile,minOvFactor,setCovProfYlim)
+    
     if(!onlyReads && length(res$start) > 0 && !skipCoAssembly){
         print("co-assembly")################################################################################
         #----------------------------------- co-assembly ----------------------------------------------------
         
-
         res = new_coassemble_MGCS_DS(res,minCovShare,metagenomeDir,onlyInvisibleCimeric)
         res[, ("length") := nchar(seq)]
         res = res[length >= minContigLength]
         res[,("covVec") := calcCovVec(res$rps,res$length)]
+        if(length(res$coverage) != 0){
+            res[,("coverage") := 0]
+        }
         
         makeFileOutput(outputFile,res,nrOfSamples,allSamplesToOneColInOut )
     }
@@ -253,7 +257,6 @@ MGCS_PreAssembly <- function(catalogue,coverage,repeatable,redraw,seed,nrOfSampl
 new_coassemble_MGCS_DS<-function(contigs,minCovShare,metagenomeDir,onlyInvisibleChimeric,seed){
     
     crossmaps = dir(paste0(metagenomeDir,"/Crossmaps"))
-    
     if(length(crossmaps) != 0){
         
         involved = unique(contigs$seqName)
@@ -339,14 +342,14 @@ new_coassemble_MGCS_DS<-function(contigs,minCovShare,metagenomeDir,onlyInvisible
                     n = n+1
                 }
             }
-            rm(contigs)
+
             
             
-            res = makeChimericContigs(involved,covs,rps,starts,ends,seqs,ovstarts1,ovends1,ovstarts2,ovends2,namesOv,seqid1,seqid2,minCovShare,onlyInvisibleChimeric)
-            res = data.table(seqNames = res[[1]],seq = res[[2]],covVecs= res[[3]],isChimeric = res[[4]])
+            contigs = makeChimericContigs(involved,covs,rps,starts,ends,seqs,ovstarts1,ovends1,ovstarts2,ovends2,namesOv,seqid1,seqid2,minCovShare,onlyInvisibleChimeric)
+            contigs = data.table(seqNames = contigs[[1]],seq = contigs[[2]],covVecs= contigs[[3]],isChimeric = contigs[[4]],coveragePerPosition = contigs[[5]])
         }
     }
-    return(res)
+    return(contigs)
 }
 
 
@@ -797,7 +800,7 @@ crossMapDS <- function(minL,threads,metagenomeDir){
             readInput = paste0("-f ",bins$dir[p],"/readsForMapX.fasta")
             #------------------------------ mapping the reads onto the other seq with bowtie2 -----------------------------------------------------------------
 
-            system(paste0("bowtie2 -a -p ",threads," --no-unal --score-min \"C,0,-1 -x\" ",metagenomeDir,"/index ",readInput," -S ",bins$dir[p],"/out.sam"),ignore.stdout = TRUE)
+            system(paste0("bowtie2 -a -p ",threads," --no-unal -x ",metagenomeDir,"/index ",readInput," -S ",bins$dir[p],"/out.sam"),ignore.stdout = TRUE)
 
             
             system(paste0("samtools view -@ ",threads," -bS ",bins$dir[p],"/out.sam > ",bins$dir[p],"/out.bam"))

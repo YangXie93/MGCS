@@ -390,40 +390,40 @@ path_to_outs = "/home/yang/BA-Data-Plots/low/params/minCovShare/"
 path_to_low_source_genomes = "/home/yang/uni/CAMI-Daten/low/source_genomes_low/source_genomes/"
 
 low_cami_minCovShare = list()
-minCovShare_cov = getAbundanceProfileFraction(low_file_system,1,0)
+minCovShare_cov = getAbundanceProfileFraction(low_file_system,0.2,0)
 
-low_cami_minCovShare[[1]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare06"), 
+low_cami_minCovShare[[1]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare06cov02x"), 
                                   threads = threads,minCovShare = 0.6,coverage = minCovShare_cov)
 
 low_cami_minCovShare[[1]] = low_cami_minCovShare[[1]]$length  
 
 
-low_cami_minCovShare[[2]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare07"),
+low_cami_minCovShare[[2]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare07cov02x"),
                                   threads = threads,minCovShare = 0.7,coverage = minCovShare_cov)
 
 low_cami_minCovShare[[2]] = low_cami_minCovShare[[2]]$length
 
 
-low_cami_minCovShare[[3]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare08"),
+low_cami_minCovShare[[3]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare08cov02x"),
                                   threads = threads,minCovShare = 0.8,coverage = minCovShare_cov)
 
 low_cami_minCovShare[[3]] = low_cami_minCovShare[[3]]$length
 
 
-low_cami_minCovShare[[4]] = MGCS(metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare09"), 
+low_cami_minCovShare[[4]] = MGCS(metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare09cov02x"), 
                                  threads = threads,minCovShare = 0.9,coverage = minCovShare_cov)
 
 low_cami_minCovShare[[4]] = low_cami_minCovShare[[4]]$length
 
 
-low_cami_minCovShare[[5]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare1"), 
+low_cami_minCovShare[[5]] = MGCS( metagenomeDir = low_file_system,outputFile = paste0(low_out,"params/minCovShare/camiLowOutminCovShare1cov02x"), 
                                   threads = threads,minCovShare = 1,coverage = minCovShare_cov)
 
 low_cami_minCovShare[[5]] = low_cami_minCovShare[[5]]$length
 
 
 outs = dir(path_to_outs)
-outs = outs[grep(".fasta",outs)]
+outs = outs[grep("x.fasta",outs)]
 outs = paste0(path_to_outs,outs,collapse = " ")
 
 gens = dir(path_to_low_source_genomes)
